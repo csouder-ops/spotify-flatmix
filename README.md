@@ -29,8 +29,8 @@ Flat Mix lets a house share quickly blend everyone’s listening habits into a s
 
 2. **Create a Spotify app**
 
-   - Visit [Spotify for Developers](https://developer.spotify.com/dashboard) and create an app.
-   - Add `http://localhost:3000/callback` as a redirect URI.
+  - Visit [Spotify for Developers](https://developer.spotify.com/dashboard) and create an app.
+  - Add `http://127.0.0.1:3000/callback` as a redirect URI (Spotify now requires the numeric loopback address).
    - Note the Client ID and Client Secret.
 
 3. **Configure environment**
@@ -40,7 +40,7 @@ Flat Mix lets a house share quickly blend everyone’s listening habits into a s
    ```bash
    SPOTIFY_CLIENT_ID=your-client-id
    SPOTIFY_CLIENT_SECRET=your-client-secret
-   SPOTIFY_REDIRECT_URI=http://localhost:3000/callback
+  SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/callback
    FLAT_CODE=riasa-apt-12
    PORT=3000
    ENCRYPTION_KEY=32+character-random-secret
