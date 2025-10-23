@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flat Mix – Group Spotify Recommender</title>
+    <link rel="stylesheet" href="/public/main.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>Flat Mix</h1>
+        <p class="tagline">Blend your flatmates' Spotify favorites into one playlist.</p>
+      </header>
+      <section class="flat-selector">
+        <label for="flatInput">Flat code</label>
+        <div class="flat-selector__controls">
+          <input id="flatInput" type="text" autocomplete="off" />
+          <button id="applyFlat">Switch flat</button>
+        </div>
+        <p class="flat-selector__hint">Current flat: <span id="flatCodeLabel">—</span></p>
+      </section>
+      <section class="actions">
+        <button id="joinButton" class="primary">Join Flat Mix</button>
+        <button id="buildButton" class="secondary">Build Playlist</button>
+      </section>
+      <section class="status">
+        <div id="statusMessage" role="status"></div>
+      </section>
+      <section class="members">
+        <h2>Flat members</h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Member</th>
+              <th scope="col">Last joined</th>
+              <th scope="col"># tracks contributed</th>
+            </tr>
+          </thead>
+          <tbody id="membersBody">
+            <tr>
+              <td colspan="3" class="empty">No members yet. Share the join link!</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="result" id="resultSection" hidden>
+        <h2>Latest mix</h2>
+        <p id="resultMessage"></p>
+        <ul id="warningList" class="warning-list"></ul>
+        <details id="debugDetails">
+          <summary>Debug data</summary>
+          <pre id="debugOutput"></pre>
+        </details>
+      </section>
+    </div>
+    <script>
+      const flatInput = document.getElementById('flatInput');
+      const flatLabel = document.getElementById('flatCodeLabel');
+      const membersBody = document.getElementById('membersBody');
+      const joinButton = document.getElementById('joinButton');
+      const buildButton = document.getElementById('buildButton');
+      const applyFlatButton = document.getElementById('applyFlat');
+      const statusMessage = document.getElementById('statusMessage');
+      const resultSection = document.getElementById('resultSection');
+      const resultMessage = document.getElementById('resultMessage');
+      const warningList = document.getElementById('warningList');
+      const debugOutput = document.getElementById('debugOutput');
+      const debugDetails = document.getElementById('debugDetails');
+
+      let defaultFlatCode = 'riasa-apt-12';
+      let currentFlatCode = null;
+
+      function setStatus(message, type = 'info') {
+        statusMessage.textContent = message || '';
+        statusMessage.className = type;
+        if (message) {
+          statusMessage.removeAttribute('hidden');
+        } else {
+          statusMessage.setAttribute('hidden', 'hidden');
+        }
+      }
+
+      function updateResult(data) {
+        if (!data) {
+          resultSection.hidden = true;
+          return;
+        }
+        resultSection.hidden = false;
+        if (data.error) {
+          resultMessage.innerHTML = `<span class="error">${data.error}</span>`;
+          warningList.innerHTML = '';
+          debugDetails.open = false;
+          debugOutput.textContent = '';
+          return;
+        }
+        const link = data.playlistUrl
+          ? `<a href="${data.playlistUrl}" target="_blank" rel="noopener noreferrer">Open on Spotify</a>`
+          : 'Playlist created successfully.';
+        resultMessage.innerHTML = `Added ${data.trackCount} tracks. ${link}`;
+        warningList.innerHTML = '';
+        if (Array.isArray(data.warnings) && data.warnings.length) {
+          for (const warning of data.warnings) {
+            const li = document.createElement('li');
+            li.textContent = warning;
+            warningList.appendChild(li);
+          }
+        }
+        if (data.debug) {
+          debugOutput.textContent = JSON.stringify(data.debug, null, 2);
+        } else {
+          debugOutput.textContent = '';
+        }
+      }
+
+      async function loadConfig() {
+        try {
+          const response = await fetch('/api/config');
+          const data = await response.json();
+          defaultFlatCode = data.defaultFlatCode || defaultFlatCode;
+          initFlat();
+        } catch (error) {
+          console.error('Failed to load config', error);
+          initFlat();
+        }
+      }
+
+      function initFlat() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const flat = urlParams.get('flat') || defaultFlatCode;
+        currentFlatCode = flat;
+        flatInput.value = flat;
+        flatLabel.textContent = flat;
+        joinButton.disabled = !flat;
+        buildButton.disabled = false;
+        loadMembers(flat);
+        if (urlParams.get('joined')) {
+          setStatus('Successfully joined Flat Mix! Ready when you are.', 'success');
+        }
+      }
+
+      async function loadMembers(flatCode) {
+        setStatus('Loading members…', 'info');
+        try {
+          const response = await fetch(`/api/flat?flat=${encodeURIComponent(flatCode)}`);
+          if (!response.ok) {
+            throw new Error('Failed to load members');
+          }
+          const data = await response.json();
+          renderMembers(data.members || []);
+          flatLabel.textContent = data.flatCode || flatCode;
+          setStatus('');
+        } catch (error) {
+          console.error('Failed to load members', error);
+          renderMembers([]);
+          setStatus('Could not load members. Try again.', 'error');
+        }
+      }
+
+      function renderMembers(members) {
+        membersBody.innerHTML = '';
+        if (!members.length) {
+          const row = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.colSpan = 3;
+          cell.className = 'empty';
+          cell.textContent = 'No members yet. Share the join link!';
+          row.appendChild(cell);
+          membersBody.appendChild(row);
+          return;
+        }
+        for (const member of members) {
+          const row = document.createElement('tr');
+          const nameCell = document.createElement('td');
+          nameCell.textContent = member.displayName || member.userId;
+          const joinedCell = document.createElement('td');
+          joinedCell.textContent = member.lastJoined
+            ? new Date(member.lastJoined).toLocaleString()
+            : '—';
+          const countCell = document.createElement('td');
+          countCell.textContent = member.contributionCount ?? 0;
+          row.appendChild(nameCell);
+          row.appendChild(joinedCell);
+          row.appendChild(countCell);
+          membersBody.appendChild(row);
+        }
+      }
+
+      function handleFlatUpdate() {
+        const nextFlat = flatInput.value.trim();
+        if (!nextFlat) {
+          setStatus('Enter a flat code to continue.', 'error');
+          return;
+        }
+        currentFlatCode = nextFlat;
+        flatLabel.textContent = nextFlat;
+        const params = new URLSearchParams(window.location.search);
+        params.set('flat', nextFlat);
+        params.delete('joined');
+        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({}, '', newUrl);
+        loadMembers(nextFlat);
+      }
+
+      async function buildPlaylist() {
+        if (!currentFlatCode) return;
+        buildButton.disabled = true;
+        setStatus('Building a fresh Flat Mix…', 'info');
+        try {
+          const response = await fetch(`/build?flat=${encodeURIComponent(currentFlatCode)}`);
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to build playlist');
+          }
+          updateResult(data);
+          setStatus('Playlist ready!', 'success');
+          loadMembers(currentFlatCode);
+        } catch (error) {
+          console.error('Build failed', error);
+          updateResult({ error: error.message });
+          setStatus(error.message || 'Could not build playlist.', 'error');
+        } finally {
+          buildButton.disabled = false;
+        }
+      }
+
+      joinButton.addEventListener('click', () => {
+        if (!currentFlatCode) return;
+        window.location.href = `/login?flat=${encodeURIComponent(currentFlatCode)}`;
+      });
+
+      buildButton.addEventListener('click', () => {
+        buildPlaylist();
+      });
+
+      applyFlatButton.addEventListener('click', handleFlatUpdate);
+      flatInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          handleFlatUpdate();
+        }
+      });
+
+      window.addEventListener('DOMContentLoaded', () => {
+        loadConfig();
+      });
+    </script>
+  </body>
+</html>
